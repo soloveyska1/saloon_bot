@@ -236,13 +236,16 @@ def get_my_order_kb(order_id: int, has_file: bool = False) -> InlineKeyboardMark
 # =============================================================================
 
 def get_admin_menu_kb() -> InlineKeyboardMarkup:
-    """Главное меню админки"""
+    """Главное меню админки (God Mode)"""
     builder = InlineKeyboardBuilder()
     builder.row(
         InlineKeyboardButton(text="📂 Активные заказы", callback_data="admin_orders")
     )
     builder.row(
+        InlineKeyboardButton(text="🔍 Поиск юзера", callback_data="admin_search_user"),
         InlineKeyboardButton(text="📊 Статистика", callback_data="admin_stats"),
+    )
+    builder.row(
         InlineKeyboardButton(text="📢 Рассылка", callback_data="admin_broadcast"),
     )
     return builder.as_markup()
@@ -328,5 +331,116 @@ def get_admin_cancel_kb() -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     builder.row(
         InlineKeyboardButton(text="❌ Отмена", callback_data="admin_orders")
+    )
+    return builder.as_markup()
+
+
+# =============================================================================
+# CRM: УПРАВЛЕНИЕ ПОЛЬЗОВАТЕЛЯМИ
+# =============================================================================
+
+def get_admin_user_search_cancel_kb() -> InlineKeyboardMarkup:
+    """Кнопка отмены поиска пользователя"""
+    builder = InlineKeyboardBuilder()
+    builder.row(
+        InlineKeyboardButton(text="❌ Отмена", callback_data="admin_menu")
+    )
+    return builder.as_markup()
+
+
+def get_admin_user_dossier_kb(user_id: int, is_banned: bool = False) -> InlineKeyboardMarkup:
+    """Клавиатура досье пользователя"""
+    builder = InlineKeyboardBuilder()
+
+    # Управление балансом
+    builder.row(
+        InlineKeyboardButton(text="💰 Изменить баланс", callback_data=f"admin_user_balance_{user_id}")
+    )
+
+    # Заметки
+    builder.row(
+        InlineKeyboardButton(text="✏️ Изменить заметку", callback_data=f"admin_user_note_{user_id}")
+    )
+
+    # Бан/разбан
+    if is_banned:
+        builder.row(
+            InlineKeyboardButton(text="✅ Разбанить", callback_data=f"admin_user_unban_{user_id}")
+        )
+    else:
+        builder.row(
+            InlineKeyboardButton(text="🚫 Забанить", callback_data=f"admin_user_ban_{user_id}")
+        )
+
+    # Изменить статус
+    builder.row(
+        InlineKeyboardButton(text="📊 Изменить статус", callback_data=f"admin_user_status_{user_id}")
+    )
+
+    # Заказы пользователя
+    builder.row(
+        InlineKeyboardButton(text="📦 Заказы юзера", callback_data=f"admin_user_orders_{user_id}")
+    )
+
+    # Назад
+    builder.row(
+        InlineKeyboardButton(text="🔍 Новый поиск", callback_data="admin_search_user"),
+        InlineKeyboardButton(text="🔙 Меню", callback_data="admin_menu"),
+    )
+    return builder.as_markup()
+
+
+def get_admin_user_status_kb(user_id: int) -> InlineKeyboardMarkup:
+    """Клавиатура выбора статуса пользователя"""
+    builder = InlineKeyboardBuilder()
+
+    statuses = [
+        ("👤 Guest", f"admin_set_status_{user_id}_guest"),
+        ("🤠 Client", f"admin_set_status_{user_id}_client"),
+        ("⭐ VIP", f"admin_set_status_{user_id}_vip"),
+    ]
+
+    for text, callback in statuses:
+        builder.row(InlineKeyboardButton(text=text, callback_data=callback))
+
+    builder.row(
+        InlineKeyboardButton(text="🔙 Назад к досье", callback_data=f"admin_view_user_{user_id}")
+    )
+    return builder.as_markup()
+
+
+def get_admin_balance_cancel_kb(user_id: int) -> InlineKeyboardMarkup:
+    """Кнопка отмены изменения баланса"""
+    builder = InlineKeyboardBuilder()
+    builder.row(
+        InlineKeyboardButton(text="❌ Отмена", callback_data=f"admin_view_user_{user_id}")
+    )
+    return builder.as_markup()
+
+
+def get_admin_broadcast_kb() -> InlineKeyboardMarkup:
+    """Клавиатура для рассылки"""
+    builder = InlineKeyboardBuilder()
+    builder.row(
+        InlineKeyboardButton(text="📨 Всем пользователям", callback_data="admin_broadcast_all")
+    )
+    builder.row(
+        InlineKeyboardButton(text="🤠 Только клиентам", callback_data="admin_broadcast_clients")
+    )
+    builder.row(
+        InlineKeyboardButton(text="⭐ Только VIP", callback_data="admin_broadcast_vip")
+    )
+    builder.row(
+        InlineKeyboardButton(text="🔙 Назад", callback_data="admin_menu")
+    )
+    return builder.as_markup()
+
+
+def get_admin_broadcast_confirm_kb() -> InlineKeyboardMarkup:
+    """Подтверждение рассылки"""
+    builder = InlineKeyboardBuilder()
+    builder.row(
+        InlineKeyboardButton(text="✅ Отправить", callback_data="admin_broadcast_confirm"),
+        InlineKeyboardButton(text="❌ Отмена", callback_data="admin_menu"),
     )
     return builder.as_markup()
