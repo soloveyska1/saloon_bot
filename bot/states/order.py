@@ -25,3 +25,6 @@ class OrderForm(StatesGroup):
 
     # Шаг 6: Подтверждение заказа
     waiting_for_confirmation = State()
+
+    # Шаг 7: Ожидание скриншота оплаты
+    waiting_for_receipt = State()

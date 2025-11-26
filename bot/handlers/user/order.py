@@ -10,6 +10,7 @@ from pathlib import Path
 from aiogram import Router, F, Bot
 from aiogram.types import CallbackQuery, Message, FSInputFile
 from aiogram.fsm.context import FSMContext
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from bot.states.order import OrderForm
@@ -60,6 +61,9 @@ logger = logging.getLogger(__name__)
 ASSETS_DIR = Path(__file__).parent.parent.parent.parent / "assets"
 ORDER_START_IMAGE = ASSETS_DIR / "order_start.jpg"
 ORDER_SUMMARY_IMAGE = ASSETS_DIR / "order_summary.jpg"
+
+# Log Channel для чеков оплаты
+LOG_CHANNEL_ID = -1003300275622
 
 
 # =============================================================================
@@ -610,16 +614,161 @@ async def cancel_order(callback: CallbackQuery, state: FSMContext) -> None:
 
 
 # =============================================================================
-# ОПЛАТА (заглушка)
+# ОПЛАТА
 # =============================================================================
 
 @router.callback_query(F.data.startswith("pay_order_"))
-async def process_payment(callback: CallbackQuery) -> None:
-    """Заглушка оплаты для пользователя"""
-    order_id = callback.data.split("_")[-1]
-    await callback.answer(
-        f"💳 Переход к оплате заказа №{order_id}...\n\n"
-        f"Функция оплаты будет добавлена в следующем обновлении.\n"
-        f"Свяжитесь с нами для оплаты.",
-        show_alert=True,
+async def process_payment(
+    callback: CallbackQuery,
+    state: FSMContext,
+    session: AsyncSession,
+) -> None:
+    """
+    Обработка нажатия кнопки оплаты
+    Показывает реквизиты и переводит в состояние ожидания чека
+    """
+    await callback.answer()
+
+    # Извлекаем order_id из callback data
+    order_id = int(callback.data.split("_")[-1])
+
+    # Получаем заказ из БД для отображения цены
+    result = await session.execute(select(Order).where(Order.id == order_id))
+    order = result.scalar_one_or_none()
+
+    if not order:
+        await callback.message.answer(
+            "❌ Заказ не найден. Попробуй позже или свяжись с поддержкой.",
+            parse_mode="HTML",
+        )
+        return
+
+    # Формируем сумму для оплаты
+    order_price = order.price if order.price else "уточняется"
+    price_text = f"{order_price} ₽" if isinstance(order_price, int) else order_price
+
+    # Сохраняем order_id в FSM
+    await state.update_data(payment_order_id=order_id)
+    await state.set_state(OrderForm.waiting_for_receipt)
+
+    # Отправляем реквизиты
+    payment_text = f"""💳 <b>РЕКВИЗИТЫ ДЛЯ ОПЛАТЫ</b>
+➖➖➖➖➖➖➖➖➖➖
+
+🏦 <b>Способ оплаты:</b>
+• Перевод на карту Сбербанк
+• Номер карты: <code>1234 5678 9012 3456</code>
+• Получатель: Иван И.
+
+💰 <b>Сумма:</b> {price_text}
+
+📌 <b>Заказ:</b> #{order_id}
+
+➖➖➖➖➖➖➖➖➖➖
+
+📸 <b>Отправь скриншот чека в ответ на это сообщение.</b>
+
+<i>После проверки оплаты Шериф начнёт работу над заказом.</i>"""
+
+    await callback.message.answer(
+        text=payment_text,
+        parse_mode="HTML",
     )
+
+    logger.info(f"Пользователь запросил оплату заказа #{order_id}")
+
+
+# =============================================================================
+# ОБРАБОТКА СКРИНШОТА ЧЕКА
+# =============================================================================
+
+@router.message(OrderForm.waiting_for_receipt, F.photo)
+async def process_receipt_photo(
+    message: Message,
+    state: FSMContext,
+    session: AsyncSession,
+    user: User,
+    bot: Bot,
+) -> None:
+    """
+    Обработка скриншота чека оплаты
+    Пересылает в лог-канал и обновляет статус заказа
+    """
+    # Получаем order_id из FSM
+    data = await state.get_data()
+    order_id = data.get("payment_order_id")
+
+    if not order_id:
+        await message.answer(
+            "⚠️ Что-то пошло не так. Попробуй начать оплату заново.",
+            parse_mode="HTML",
+        )
+        await state.clear()
+        return
+
+    # Получаем заказ из БД
+    result = await session.execute(select(Order).where(Order.id == order_id))
+    order = result.scalar_one_or_none()
+
+    if not order:
+        await message.answer(
+            "❌ Заказ не найден. Свяжись с поддержкой.",
+            parse_mode="HTML",
+        )
+        await state.clear()
+        return
+
+    # Берём самое большое фото
+    photo = message.photo[-1]
+
+    # Формируем подпись для админов
+    admin_caption = f"""💸 <b>ЧЕК ОТ КЛИЕНТА</b> | Заказ #{order_id}
+
+👤 <b>Клиент:</b> {user.first_name} (@{user.username or 'без username'})
+🆔 <b>Telegram ID:</b> <code>{user.telegram_id}</code>
+💰 <b>Цена заказа:</b> {order.price or 'не установлена'} ₽
+
+📝 <b>Работа:</b> {order.work_type_name or order.work_type}
+📚 <b>Тема:</b> {order.subject[:100]}{'...' if len(order.subject) > 100 else ''}"""
+
+    # Пересылаем фото в лог-канал
+    try:
+        await bot.send_photo(
+            chat_id=LOG_CHANNEL_ID,
+            photo=photo.file_id,
+            caption=admin_caption,
+            parse_mode="HTML",
+        )
+    except Exception as e:
+        logger.error(f"Не удалось отправить чек в лог-канал: {e}")
+
+    # Также уведомляем админов напрямую
+    for admin_id in config.admin_ids:
+        try:
+            await bot.send_photo(
+                chat_id=admin_id,
+                photo=photo.file_id,
+                caption=admin_caption,
+                parse_mode="HTML",
+            )
+        except Exception as e:
+            logger.error(f"Не удалось отправить чек админу {admin_id}: {e}")
+
+    # Обновляем статус заказа
+    order.status = "payment_wait"
+
+    # Очищаем состояние
+    await state.clear()
+
+    # Отправляем подтверждение пользователю
+    await message.answer(
+        text="""✅ <b>Чек принят!</b>
+
+Шериф проверит оплату и начнёт работу над твоим заказом.
+
+⏳ <i>Обычно проверка занимает до 30 минут в рабочее время.</i>""",
+        parse_mode="HTML",
+        reply_markup=get_main_menu_kb(),
+    )
+
+    logger.info(f"Получен чек оплаты для заказа #{order_id} от пользователя {user.telegram_id}")
