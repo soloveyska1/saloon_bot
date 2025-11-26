@@ -25,3 +25,13 @@ class OrderForm(StatesGroup):
 
     # Шаг 6: Подтверждение заказа
     waiting_for_confirmation = State()
+
+    # Ожидание чека оплаты
+    waiting_for_receipt = State()
+
+
+class SupportState(StatesGroup):
+    """Состояния для обращения в поддержку"""
+
+    # Ожидание сообщения для поддержки
+    waiting_for_message = State()

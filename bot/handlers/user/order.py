@@ -12,7 +12,7 @@ from aiogram.types import CallbackQuery, Message, FSInputFile
 from aiogram.fsm.context import FSMContext
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from bot.states.order import OrderForm
+from bot.states.order import OrderForm, SupportState
 from bot.keyboards.inline import (
     get_work_types_kb,
     get_deadline_kb,
@@ -20,11 +20,13 @@ from bot.keyboards.inline import (
     get_order_summary_kb,
     get_main_menu_kb,
     get_terms_kb,
+    get_cancel_kb,
     WORK_TYPES,
     DEADLINES,
 )
 from database.models import Order, User
 from config import config
+from services import LOG_CHANNEL_ID
 
 # Текст юридической оферты (Кодекс Салуна)
 TERMS_TEXT = """📜 <b>КОДЕКС САЛУНА</b>
@@ -610,16 +612,192 @@ async def cancel_order(callback: CallbackQuery, state: FSMContext) -> None:
 
 
 # =============================================================================
-# ОПЛАТА (заглушка)
+# ОПЛАТА - ОТПРАВКА ЧЕКА
 # =============================================================================
 
 @router.callback_query(F.data.startswith("pay_order_"))
-async def process_payment(callback: CallbackQuery) -> None:
-    """Заглушка оплаты для пользователя"""
+async def process_payment(callback: CallbackQuery, state: FSMContext) -> None:
+    """Начать процесс отправки чека оплаты"""
+    await callback.answer()
+
     order_id = callback.data.split("_")[-1]
-    await callback.answer(
-        f"💳 Переход к оплате заказа №{order_id}...\n\n"
-        f"Функция оплаты будет добавлена в следующем обновлении.\n"
-        f"Свяжитесь с нами для оплаты.",
-        show_alert=True,
+
+    # Сохраняем ID заказа в состояние
+    await state.update_data(payment_order_id=order_id)
+    await state.set_state(OrderForm.waiting_for_receipt)
+
+    text = f"""💳 <b>ОПЛАТА ЗАКАЗА №{order_id}</b>
+
+Отправь фото или скриншот чека оплаты.
+
+<b>Реквизиты для оплаты:</b>
+• Сбербанк: <code>1234 5678 9012 3456</code>
+• ЮMoney: <code>410012345678901</code>
+
+<i>После проверки чека, заказ будет взят в работу.</i> 👇"""
+
+    try:
+        await callback.message.edit_text(
+            text=text,
+            parse_mode="HTML",
+            reply_markup=get_cancel_kb(),
+        )
+    except Exception:
+        await callback.message.delete()
+        await callback.message.answer(
+            text=text,
+            parse_mode="HTML",
+            reply_markup=get_cancel_kb(),
+        )
+
+
+@router.message(OrderForm.waiting_for_receipt, F.photo)
+async def process_receipt_photo(
+    message: Message,
+    state: FSMContext,
+    bot: Bot,
+    user: User,
+) -> None:
+    """Обработка фото чека оплаты"""
+    data = await state.get_data()
+    order_id = data.get("payment_order_id", "?")
+
+    # Очищаем состояние
+    await state.clear()
+
+    # Отправляем подтверждение пользователю
+    await message.answer(
+        f"✅ <b>Чек получен!</b>\n\n"
+        f"Заказ №{order_id} — чек на проверке.\n"
+        f"Как только проверим оплату, заказ будет взят в работу!\n\n"
+        f"<i>Обычно это занимает до 30 минут.</i> 🤠",
+        parse_mode="HTML",
+        reply_markup=get_main_menu_kb(),
     )
+
+    # Пересылаем чек в лог-канал
+    photo_id = message.photo[-1].file_id
+    header = f"#PAYMENT #ORDER_{order_id}\n\n"
+    header += f"💳 <b>ЧЕК ОПЛАТЫ</b>\n"
+    header += f"➖➖➖➖➖➖➖➖➖➖\n"
+    header += f"📦 Заказ: <code>#{order_id}</code>\n"
+    header += f"👤 Клиент: <a href='tg://user?id={user.telegram_id}'>{user.first_name}</a>\n"
+    header += f"🆔 ID: <code>{user.telegram_id}</code>\n"
+    header += f"➖➖➖➖➖➖➖➖➖➖\n"
+    header += f"<i>Требуется проверка!</i>"
+
+    try:
+        await bot.send_photo(
+            chat_id=LOG_CHANNEL_ID,
+            photo=photo_id,
+            caption=header,
+            parse_mode="HTML",
+        )
+        logger.info(f"Чек от пользователя {user.telegram_id} отправлен в лог-канал")
+    except Exception as e:
+        logger.error(f"Ошибка отправки чека в лог-канал: {e}")
+
+
+# =============================================================================
+# ПОДДЕРЖКА - ВОПРОС ПО ЦЕНЕ / ОБРАЩЕНИЕ К ШЕФУ
+# =============================================================================
+
+@router.callback_query(F.data == "support")
+async def start_support(callback: CallbackQuery, state: FSMContext) -> None:
+    """Начать обращение в поддержку"""
+    await callback.answer()
+
+    await state.set_state(SupportState.waiting_for_message)
+
+    text = """🆘 <b>СВЯЗЬ С ШЕФОМ</b>
+
+Напиши свой вопрос или предложение по цене.
+
+<i>Шеф получит твоё сообщение и ответит в ближайшее время!</i>
+
+👇 Пиши сюда:"""
+
+    try:
+        await callback.message.edit_text(
+            text=text,
+            parse_mode="HTML",
+            reply_markup=get_cancel_kb(),
+        )
+    except Exception:
+        await callback.message.delete()
+        await callback.message.answer(
+            text=text,
+            parse_mode="HTML",
+            reply_markup=get_cancel_kb(),
+        )
+
+
+@router.message(SupportState.waiting_for_message, F.text)
+async def process_support_message(
+    message: Message,
+    state: FSMContext,
+    bot: Bot,
+    user: User,
+) -> None:
+    """Обработка сообщения для поддержки"""
+    user_message = message.text
+
+    # Очищаем состояние
+    await state.clear()
+
+    # Отправляем подтверждение пользователю
+    await message.answer(
+        "✅ <b>Сообщение отправлено Шефу!</b>\n\n"
+        "Ожидай ответа — обычно отвечаем в течение часа.\n\n"
+        "<i>Спасибо за обращение!</i> 🤠",
+        parse_mode="HTML",
+        reply_markup=get_main_menu_kb(),
+    )
+
+    # Отправляем сообщение в лог-канал
+    header = f"#SUPPORT\n\n"
+    header += f"🆘 <b>ОБРАЩЕНИЕ В ПОДДЕРЖКУ</b>\n"
+    header += f"➖➖➖➖➖➖➖➖➖➖\n"
+    header += f"👤 От: <a href='tg://user?id={user.telegram_id}'>{user.first_name}</a>\n"
+    header += f"🆔 ID: <code>{user.telegram_id}</code>\n"
+    header += f"📧 Username: @{user.username or '—'}\n"
+    header += f"➖➖➖➖➖➖➖➖➖➖\n\n"
+    header += f"💬 <b>Сообщение:</b>\n"
+    header += f"<i>{user_message[:1000]}</i>"
+
+    try:
+        await bot.send_message(
+            chat_id=LOG_CHANNEL_ID,
+            text=header,
+            parse_mode="HTML",
+        )
+        logger.info(f"Сообщение поддержки от {user.telegram_id} отправлено в лог-канал")
+    except Exception as e:
+        logger.error(f"Ошибка отправки в лог-канал: {e}")
+
+
+@router.callback_query(F.data == "cancel")
+async def cancel_action(callback: CallbackQuery, state: FSMContext) -> None:
+    """Отмена текущего действия (поддержка, оплата)"""
+    await callback.answer("Действие отменено")
+
+    # Очищаем состояние
+    await state.clear()
+
+    text = """🔙 <b>Действие отменено.</b>
+
+<i>Выбери действие в меню:</i> 👇"""
+
+    try:
+        await callback.message.edit_text(
+            text=text,
+            parse_mode="HTML",
+            reply_markup=get_main_menu_kb(),
+        )
+    except Exception:
+        await callback.message.delete()
+        await callback.message.answer(
+            text=text,
+            parse_mode="HTML",
+            reply_markup=get_main_menu_kb(),
+        )
