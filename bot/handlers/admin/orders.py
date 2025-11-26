@@ -156,7 +156,7 @@ async def show_order_card(callback: CallbackQuery, session: AsyncSession) -> Non
         await callback.message.edit_text(
             text=text,
             parse_mode="HTML",
-            reply_markup=get_admin_order_kb(order_id),
+            reply_markup=get_admin_order_kb(order_id, order.status),
         )
     except Exception:
         # Если не получилось (например, было фото), удаляем и отправляем новое
@@ -164,7 +164,7 @@ async def show_order_card(callback: CallbackQuery, session: AsyncSession) -> Non
         await callback.message.answer(
             text=text,
             parse_mode="HTML",
-            reply_markup=get_admin_order_kb(order_id),
+            reply_markup=get_admin_order_kb(order_id, order.status),
         )
 
 
@@ -361,6 +361,138 @@ async def process_price(
 
 
 # =============================================================================
+# ЗАГРУЗКА ГОТОВОЙ РАБОТЫ
+# =============================================================================
+
+@router.callback_query(F.data.startswith("admin_upload_work_"))
+async def start_upload_work(callback: CallbackQuery, state: FSMContext) -> None:
+    """Начать процесс загрузки готовой работы"""
+    await callback.answer()
+
+    order_id = int(callback.data.split("_")[-1])
+
+    # Сохраняем ID заказа в состояние
+    await state.update_data(order_id=order_id)
+    await state.set_state(AdminStates.waiting_for_final_file)
+
+    text = f"""📤 <b>ОТПРАВКА ГОТОВОЙ РАБОТЫ</b>
+
+Заказ №{order_id}
+
+Пришлите файл с готовой работой:
+<i>(docx, pdf, zip и т.д.)</i>"""
+
+    try:
+        await callback.message.edit_text(
+            text=text,
+            parse_mode="HTML",
+            reply_markup=get_admin_cancel_kb(),
+        )
+    except Exception:
+        await callback.message.delete()
+        await callback.message.answer(
+            text=text,
+            parse_mode="HTML",
+            reply_markup=get_admin_cancel_kb(),
+        )
+
+
+@router.message(AdminStates.waiting_for_final_file, F.document)
+async def process_final_file(
+    message: Message,
+    state: FSMContext,
+    session: AsyncSession,
+    bot: Bot,
+) -> None:
+    """Обработка загруженного файла готовой работы"""
+    # Получаем ID заказа из состояния
+    data = await state.get_data()
+    order_id = data.get("order_id")
+
+    # Получаем заказ
+    stmt = (
+        select(Order)
+        .options(selectinload(Order.user))
+        .where(Order.id == order_id)
+    )
+    result = await session.execute(stmt)
+    order = result.scalar_one_or_none()
+
+    if not order:
+        await message.answer("❌ Заказ не найден!")
+        await state.clear()
+        return
+
+    # Сохраняем file_id
+    document = message.document
+    order.final_file_id = document.file_id
+    order.final_file_name = document.file_name or "work.docx"
+    order.status = "completed"
+
+    # Очищаем состояние
+    await state.clear()
+
+    # Уведомляем админа
+    await message.answer(
+        f"✅ Готовая работа загружена для заказа №{order_id}!\n"
+        f"Файл: <b>{order.final_file_name}</b>\n\n"
+        f"Статус изменён на <b>Выполнен</b>.\n"
+        f"Клиент уведомлён и получил файл.",
+        parse_mode="HTML",
+    )
+
+    # Формируем текст для пользователя
+    user_text = f"""🏁 <b>Заказ №{order_id} готов!</b>
+
+📋 <b>Тема:</b> {order.subject[:100]}
+
+Лови файл, партнёр! 🤠
+
+➖➖➖➖➖➖➖➖➖➖
+<i>У тебя есть 30 дней гарантии.
+Если нужны правки — пиши Шефу!</i>"""
+
+    # Отправляем пользователю уведомление
+    photo_path = "assets/work_done.jpg"
+    try:
+        if os.path.exists(photo_path):
+            photo = FSInputFile(photo_path)
+            await bot.send_photo(
+                chat_id=order.user.telegram_id,
+                photo=photo,
+                caption=user_text,
+                parse_mode="HTML",
+            )
+        else:
+            await bot.send_message(
+                chat_id=order.user.telegram_id,
+                text=user_text,
+                parse_mode="HTML",
+            )
+
+        # Отправляем сам документ
+        await bot.send_document(
+            chat_id=order.user.telegram_id,
+            document=order.final_file_id,
+            caption=f"📄 {order.final_file_name}\nЗаказ №{order_id}",
+        )
+        logger.info(f"Готовая работа отправлена пользователю {order.user.telegram_id}")
+    except Exception as e:
+        logger.error(f"Не удалось отправить файл пользователю: {e}")
+        await message.answer(f"⚠️ Не удалось отправить файл клиенту: {e}")
+
+
+@router.message(AdminStates.waiting_for_final_file)
+async def wrong_final_file(message: Message) -> None:
+    """Если админ прислал не документ"""
+    await message.answer(
+        "⚠️ Пожалуйста, отправьте <b>документ</b> (файл).\n"
+        "Фото и другие типы сообщений не принимаются.",
+        parse_mode="HTML",
+    )
+
+
+# =============================================================================
 # ИЗМЕНЕНИЕ СТАТУСОВ
 # =============================================================================
 
@@ -398,7 +530,7 @@ async def set_in_progress(callback: CallbackQuery, session: AsyncSession, bot: B
 
 @router.callback_query(F.data.startswith("admin_complete_"))
 async def set_completed(callback: CallbackQuery, session: AsyncSession, bot: Bot) -> None:
-    """Пометить заказ как выполненный"""
+    """Пометить заказ как выполненный (без файла)"""
     order_id = int(callback.data.split("_")[-1])
 
     stmt = select(Order).options(selectinload(Order.user)).where(Order.id == order_id)

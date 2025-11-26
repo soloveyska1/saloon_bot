@@ -75,18 +75,22 @@ class Order(Base):
     deadline: Mapped[str] = mapped_column(String(50))  # week, medium, urgent
     deadline_name: Mapped[str] = mapped_column(String(100))  # Человекочитаемое название
 
-    # Файлы (file_id через запятую)
+    # Файлы от пользователя (file_id через запятую)
     file_ids: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 
     # Голосовое сообщение (если было)
     voice_file_id: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
 
+    # Финальный файл от админа (готовая работа)
+    final_file_id: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    final_file_name: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+
     # Статус заказа
     status: Mapped[str] = mapped_column(String(50), default="new")
-    # Статусы: new, in_progress, review, completed, cancelled
+    # Статусы: new, pending_payment, paid, in_progress, completed, cancelled
 
     # Цена и оплата
-    price: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)  # В копейках/центах
+    price: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     paid_amount: Mapped[int] = mapped_column(Integer, default=0)
 
     # Комментарий от пользователя
@@ -120,3 +124,29 @@ class Order(Base):
     def files_count(self) -> int:
         """Количество прикреплённых файлов"""
         return len(self.file_ids_list)
+
+    @property
+    def status_emoji(self) -> str:
+        """Эмодзи для статуса"""
+        emojis = {
+            "new": "🆕",
+            "pending_payment": "⏳",
+            "paid": "💰",
+            "in_progress": "🔄",
+            "completed": "✅",
+            "cancelled": "❌",
+        }
+        return emojis.get(self.status, "📋")
+
+    @property
+    def status_name(self) -> str:
+        """Название статуса на русском"""
+        names = {
+            "new": "Новый",
+            "pending_payment": "Ожидает оплаты",
+            "paid": "Оплачен",
+            "in_progress": "В работе",
+            "completed": "Готов",
+            "cancelled": "Отменён",
+        }
+        return names.get(self.status, self.status)

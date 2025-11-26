@@ -7,9 +7,11 @@ from pathlib import Path
 
 from aiogram import Router, F
 from aiogram.types import CallbackQuery, FSInputFile
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
-from bot.keyboards.inline import get_back_kb
-from database.models import User
+from bot.keyboards.inline import get_profile_kb
+from database.models import User, Order
 
 router = Router(name="profile")
 
@@ -28,7 +30,7 @@ RANK_NAMES = {
 
 
 @router.callback_query(F.data == "profile")
-async def show_profile(callback: CallbackQuery, user: User) -> None:
+async def show_profile(callback: CallbackQuery, user: User, session: AsyncSession) -> None:
     """
     Показать личное дело ковбоя
     """
@@ -43,6 +45,27 @@ async def show_profile(callback: CallbackQuery, user: User) -> None:
     # Формируем имя для отображения
     display_name = user.username or user.first_name
 
+    # Получаем последние 5 заказов пользователя
+    stmt = (
+        select(Order)
+        .where(Order.user_id == user.id)
+        .order_by(Order.created_at.desc())
+        .limit(5)
+    )
+    result = await session.execute(stmt)
+    orders = result.scalars().all()
+
+    # Формируем историю заказов
+    if orders:
+        orders_text = "\n📂 <b>Твои заказы:</b>\n"
+        for i, order in enumerate(orders, 1):
+            # Сокращаем тему
+            subject_short = order.subject[:30] + "..." if len(order.subject) > 30 else order.subject
+            orders_text += f"{i}. {order.work_type_name} — {order.status_emoji} {order.status_name}\n"
+            orders_text += f"   <i>{subject_short}</i>\n"
+    else:
+        orders_text = "\n<i>📋 История заказов пуста... пока что.</i>\n"
+
     caption = f"""📂 <b>ЛИЧНОЕ ДЕЛО: {display_name}</b>
 ➖➖➖➖➖➖➖➖➖➖
 🆔 ID: <code>{user.telegram_id}</code>
@@ -50,12 +73,10 @@ async def show_profile(callback: CallbackQuery, user: User) -> None:
 ⭐️ Ранг: <b>{rank_display}</b>
 💰 Бонусы: <b>{user.bonus_balance}</b> монет
 ➖➖➖➖➖➖➖➖➖➖
-
-<i>📋 История заказов пуста... пока что.</i>
-
+{orders_text}
 <i>Выполняй заказы — повышай ранг и получай бонусы!</i>"""
 
-    keyboard = get_back_kb(callback_data="main_menu")
+    keyboard = get_profile_kb(orders)
 
     # Отправляем фото или редактируем текст
     if PROFILE_IMAGE.exists():

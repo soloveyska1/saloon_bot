@@ -16,3 +16,6 @@ class AdminStates(StatesGroup):
 
     # Ожидание текста рассылки
     waiting_for_broadcast = State()
+
+    # Ожидание финального файла (готовой работы)
+    waiting_for_final_file = State()

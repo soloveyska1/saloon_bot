@@ -180,6 +180,46 @@ def get_payment_kb(order_id: int) -> InlineKeyboardMarkup:
 
 
 # =============================================================================
+# ИСТОРИЯ ЗАКАЗОВ (для пользователя)
+# =============================================================================
+
+def get_profile_kb(orders: list = None) -> InlineKeyboardMarkup:
+    """Клавиатура профиля с кнопками заказов"""
+    builder = InlineKeyboardBuilder()
+
+    # Добавляем кнопки заказов (если есть)
+    if orders:
+        for order in orders[:5]:  # Максимум 5 заказов
+            builder.row(
+                InlineKeyboardButton(
+                    text=f"{order.status_emoji} Заказ №{order.id}",
+                    callback_data=f"my_order_{order.id}"
+                )
+            )
+
+    # Кнопка назад
+    builder.row(
+        InlineKeyboardButton(text="🔙 Назад в меню", callback_data="main_menu")
+    )
+    return builder.as_markup()
+
+
+def get_my_order_kb(order_id: int, has_file: bool = False) -> InlineKeyboardMarkup:
+    """Клавиатура для просмотра своего заказа"""
+    builder = InlineKeyboardBuilder()
+
+    if has_file:
+        builder.row(
+            InlineKeyboardButton(text="📥 Скачать файл", callback_data=f"download_work_{order_id}")
+        )
+
+    builder.row(
+        InlineKeyboardButton(text="🔙 Назад к профилю", callback_data="profile")
+    )
+    return builder.as_markup()
+
+
+# =============================================================================
 # АДМИН-ПАНЕЛЬ
 # =============================================================================
 
@@ -225,19 +265,34 @@ def get_admin_orders_kb(orders: list) -> InlineKeyboardMarkup:
     return builder.as_markup()
 
 
-def get_admin_order_kb(order_id: int) -> InlineKeyboardMarkup:
+def get_admin_order_kb(order_id: int, status: str = "new") -> InlineKeyboardMarkup:
     """Клавиатура действий с заказом для админа"""
     builder = InlineKeyboardBuilder()
+
+    # Кнопка скачать файлы - всегда
     builder.row(
         InlineKeyboardButton(text="📎 Скачать файлы", callback_data=f"admin_files_{order_id}")
     )
-    builder.row(
-        InlineKeyboardButton(text="💰 Назвать цену", callback_data=f"admin_set_price_{order_id}")
-    )
-    builder.row(
-        InlineKeyboardButton(text="✅ В работу", callback_data=f"admin_in_progress_{order_id}"),
-        InlineKeyboardButton(text="✔️ Выполнен", callback_data=f"admin_complete_{order_id}"),
-    )
+
+    # Если статус paid - показываем кнопку отправки готовой работы
+    if status == "paid":
+        builder.row(
+            InlineKeyboardButton(text="📤 Отправить готовую работу", callback_data=f"admin_upload_work_{order_id}")
+        )
+
+    # Кнопка назвать цену (если ещё не оплачен)
+    if status in ("new", "pending_payment"):
+        builder.row(
+            InlineKeyboardButton(text="💰 Назвать цену", callback_data=f"admin_set_price_{order_id}")
+        )
+
+    # Кнопки смены статуса
+    if status != "completed":
+        builder.row(
+            InlineKeyboardButton(text="✅ В работу", callback_data=f"admin_in_progress_{order_id}"),
+            InlineKeyboardButton(text="✔️ Выполнен", callback_data=f"admin_complete_{order_id}"),
+        )
+
     builder.row(
         InlineKeyboardButton(text="❌ Отклонить", callback_data=f"admin_reject_{order_id}")
     )
