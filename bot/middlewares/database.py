@@ -35,8 +35,9 @@ class DatabaseMiddleware(BaseMiddleware):
 
             if tg_user and not tg_user.is_bot:
                 # Ищем или создаём пользователя в БД
-                user = await self._get_or_create_user(session, tg_user)
+                user, is_new_user = await self._get_or_create_user(session, tg_user)
                 data["user"] = user
+                data["is_new_user"] = is_new_user  # Флаг для реферальной системы
 
             result = await handler(event, data)
 
@@ -47,8 +48,11 @@ class DatabaseMiddleware(BaseMiddleware):
 
     async def _get_or_create_user(
         self, session: AsyncSession, tg_user: TgUser
-    ) -> User:
-        """Получить пользователя из БД или создать нового"""
+    ) -> tuple[User, bool]:
+        """
+        Получить пользователя из БД или создать нового
+        Возвращает tuple (user, is_new_user)
+        """
 
         # Ищем существующего пользователя
         stmt = select(User).where(User.telegram_id == tg_user.id)
@@ -60,7 +64,7 @@ class DatabaseMiddleware(BaseMiddleware):
             user.username = tg_user.username
             user.first_name = tg_user.first_name
             user.last_name = tg_user.last_name
-            return user
+            return user, False  # Существующий пользователь
 
         # Создаём нового ковбоя
         user = User(
@@ -73,4 +77,4 @@ class DatabaseMiddleware(BaseMiddleware):
         session.add(user)
         await session.flush()  # Получаем ID сразу
 
-        return user
+        return user, True  # Новый пользователь

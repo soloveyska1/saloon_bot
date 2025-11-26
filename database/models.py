@@ -31,9 +31,17 @@ class User(Base):
     # Реферальная система
     referral_code: Mapped[Optional[str]] = mapped_column(String(50), unique=True, nullable=True)
     referred_by: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True)
+    referrer_id: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True)  # ID пригласившего пользователя
 
     # Бонусы и баланс
     bonus_balance: Mapped[int] = mapped_column(default=0)
+    balance: Mapped[int] = mapped_column(Integer, default=0)  # Баланс пользователя
+
+    # Юридическая оферта
+    terms_accepted: Mapped[bool] = mapped_column(Boolean, default=False)  # Флаг принятия оферты
+
+    # CRM заметки
+    admin_notes: Mapped[Optional[str]] = mapped_column(Text, nullable=True)  # Заметки админа
 
     # Статус
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)

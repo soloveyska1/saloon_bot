@@ -3,15 +3,20 @@
 Первое знакомство ковбоя с салуном
 """
 
+import logging
 from pathlib import Path
 
 from aiogram import Router
-from aiogram.filters import CommandStart
+from aiogram.filters import CommandStart, CommandObject
 from aiogram.types import Message, FSInputFile
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from bot.keyboards.inline import get_main_menu_kb
+from database.models import User
 
 router = Router(name="start")
+logger = logging.getLogger(__name__)
 
 # Путь к изображению главного меню
 ASSETS_DIR = Path(__file__).parent.parent.parent.parent / "assets"
@@ -19,11 +24,40 @@ MAIN_MENU_IMAGE = ASSETS_DIR / "main_menu.jpg"
 
 
 @router.message(CommandStart())
-async def cmd_start(message: Message) -> None:
+async def cmd_start(
+    message: Message,
+    command: CommandObject,
+    user: User,
+    session: AsyncSession,
+    is_new_user: bool = False,
+) -> None:
     """
     Обработка команды /start
     Приветствие нового посетителя салуна с фото
+    Поддержка реферальной системы через deep-linking
     """
+
+    # Обработка реферальной системы
+    if is_new_user and command.args:
+        try:
+            referrer_telegram_id = int(command.args)
+
+            # Проверяем, что пользователь не приглашает сам себя
+            if referrer_telegram_id != message.from_user.id:
+                # Проверяем, существует ли реферер в БД
+                stmt = select(User).where(User.telegram_id == referrer_telegram_id)
+                result = await session.execute(stmt)
+                referrer = result.scalar_one_or_none()
+
+                if referrer:
+                    # Записываем referrer_id
+                    user.referrer_id = referrer_telegram_id
+                    logger.info(
+                        f"Пользователь {message.from_user.id} зарегистрирован по реферальной ссылке от {referrer_telegram_id}"
+                    )
+        except (ValueError, TypeError):
+            # Аргумент не является числом — игнорируем
+            pass
 
     caption = """🤠 <b>Йо-хо, Ковбой! Добро пожаловать в Академический Салун!</b>
 
