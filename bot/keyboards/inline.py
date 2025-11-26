@@ -122,6 +122,34 @@ def get_skip_kb(skip_callback: str = "skip") -> InlineKeyboardMarkup:
     return builder.as_markup()
 
 
+def get_files_done_kb() -> InlineKeyboardMarkup:
+    """Клавиатура после загрузки файлов"""
+    builder = InlineKeyboardBuilder()
+    builder.row(
+        InlineKeyboardButton(text="✅ Всё загрузил, готово!", callback_data="files_done")
+    )
+    builder.row(
+        InlineKeyboardButton(text="⏭ Пропустить (без файлов)", callback_data="files_skip")
+    )
+    builder.row(
+        InlineKeyboardButton(text="🔙 Отмена", callback_data="cancel_order")
+    )
+    return builder.as_markup()
+
+
+def get_order_summary_kb() -> InlineKeyboardMarkup:
+    """Клавиатура для сводки заказа"""
+    builder = InlineKeyboardBuilder()
+    builder.row(
+        InlineKeyboardButton(text="✅ Подтвердить и отправить", callback_data="confirm_order")
+    )
+    builder.row(
+        InlineKeyboardButton(text="🔄 Заполнить заново", callback_data="order_work"),
+        InlineKeyboardButton(text="❌ Отменить", callback_data="cancel_order"),
+    )
+    return builder.as_markup()
+
+
 def get_confirm_order_kb() -> InlineKeyboardMarkup:
     """Клавиатура подтверждения заказа"""
     builder = InlineKeyboardBuilder()

@@ -5,8 +5,8 @@ SQLAlchemy модели базы данных
 from datetime import datetime
 from typing import Optional
 
-from sqlalchemy import BigInteger, Boolean, DateTime, String, Text, func
-from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
+from sqlalchemy import BigInteger, Boolean, DateTime, ForeignKey, Integer, String, Text, func
+from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 
 class Base(DeclarativeBase):
@@ -50,5 +50,73 @@ class User(Base):
         onupdate=func.now()
     )
 
+    # Связь с заказами
+    orders: Mapped[list["Order"]] = relationship(back_populates="user")
+
     def __repr__(self) -> str:
         return f"<User {self.telegram_id} ({self.first_name})>"
+
+
+class Order(Base):
+    """Модель заказа"""
+
+    __tablename__ = "orders"
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+
+    # Связь с пользователем
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    user: Mapped["User"] = relationship(back_populates="orders")
+
+    # Данные заказа
+    work_type: Mapped[str] = mapped_column(String(100))  # type_coursework, type_diploma, etc.
+    work_type_name: Mapped[str] = mapped_column(String(255))  # Человекочитаемое название
+    subject: Mapped[str] = mapped_column(Text)  # Предмет и тема
+    deadline: Mapped[str] = mapped_column(String(50))  # week, medium, urgent
+    deadline_name: Mapped[str] = mapped_column(String(100))  # Человекочитаемое название
+
+    # Файлы (file_id через запятую)
+    file_ids: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+
+    # Голосовое сообщение (если было)
+    voice_file_id: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+
+    # Статус заказа
+    status: Mapped[str] = mapped_column(String(50), default="new")
+    # Статусы: new, in_progress, review, completed, cancelled
+
+    # Цена и оплата
+    price: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)  # В копейках/центах
+    paid_amount: Mapped[int] = mapped_column(Integer, default=0)
+
+    # Комментарий от пользователя
+    comment: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+
+    # Комментарий от админа
+    admin_comment: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+
+    # Временные метки
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now()
+    )
+
+    def __repr__(self) -> str:
+        return f"<Order #{self.id} ({self.status})>"
+
+    @property
+    def file_ids_list(self) -> list[str]:
+        """Получить список file_id"""
+        if not self.file_ids:
+            return []
+        return [fid.strip() for fid in self.file_ids.split(",") if fid.strip()]
+
+    @property
+    def files_count(self) -> int:
+        """Количество прикреплённых файлов"""
+        return len(self.file_ids_list)
