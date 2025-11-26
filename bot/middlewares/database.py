@@ -66,13 +66,13 @@ class DatabaseMiddleware(BaseMiddleware):
             user.last_name = tg_user.last_name
             return user, False  # Существующий пользователь
 
-        # Создаём нового ковбоя
+        # Создаём нового пользователя
         user = User(
             telegram_id=tg_user.id,
             username=tg_user.username,
             first_name=tg_user.first_name,
             last_name=tg_user.last_name or None,
-            rank="greenhorn",  # Новичок
+            status_group="guest",  # Новый пользователь — гость
         )
         session.add(user)
         await session.flush()  # Получаем ID сразу

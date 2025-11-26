@@ -484,14 +484,14 @@ async def confirm_order(
     files_data_json = json.dumps(file_ids_list) if file_ids_list else None
 
     # Создаём заказ в БД
-    # Примечание: deadline остаётся None (точная дата устанавливается админом)
-    # deadline_name хранит выбранную срочность ("Неделя+", "3-7 дней", "Срочно!")
+    # Примечание: deadline (DateTime) устанавливается позже админом
+    # deadline_name хранит выбранную срочность как строку
     order = Order(
         user_id=user.id,
         work_type=data.get("work_type_key", "unknown"),
         work_type_name=data.get("work_type_name", "Неизвестный тип"),
         subject=data.get("subject", ""),
-        deadline=None,  # DateTime field - actual date set by admin later
+        deadline=None,  # DateTime - будет установлен админом
         deadline_name=data.get("deadline_name", "Неизвестный срок"),
         file_ids=file_ids_str,
         files_data=files_data_json,
