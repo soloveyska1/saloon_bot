@@ -2,7 +2,6 @@
 Middlewares package - промежуточные обработчики
 """
 
-# TODO: Добавить middleware для:
-# - Регистрации пользователей в БД
-# - Throttling (защита от спама)
-# - Логирования
+from bot.middlewares.database import DatabaseMiddleware
+
+__all__ = ["DatabaseMiddleware"]

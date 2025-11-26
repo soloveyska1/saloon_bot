@@ -14,6 +14,7 @@ from aiogram.enums import ParseMode
 from config import config
 from database import init_db
 from bot.handlers import setup_routers
+from bot.middlewares import DatabaseMiddleware
 
 
 async def on_startup(bot: Bot) -> None:
@@ -55,6 +56,9 @@ async def main() -> None:
 
     # Создаём диспетчер
     dp = Dispatcher()
+
+    # Подключаем middleware
+    dp.update.middleware(DatabaseMiddleware())
 
     # Регистрируем события startup/shutdown
     dp.startup.register(on_startup)
