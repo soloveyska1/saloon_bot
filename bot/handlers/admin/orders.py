@@ -50,6 +50,9 @@ async def show_orders_list(callback: CallbackQuery, session: AsyncSession, state
     result = await session.execute(stmt)
     orders = result.scalars().all()
 
+    # Удаляем старое сообщение (это может быть фото или текст)
+    await callback.message.delete()
+
     if not orders:
         text = """📂 <b>АКТИВНЫЕ ЗАКАЗЫ</b>
 ➖➖➖➖➖➖➖➖➖➖
@@ -58,7 +61,7 @@ async def show_orders_list(callback: CallbackQuery, session: AsyncSession, state
 <i>Ни одного активного заказа.</i>
 
 🤠 Отдыхайте пока!"""
-        await callback.message.edit_text(
+        await callback.message.answer(
             text=text,
             parse_mode="HTML",
             reply_markup=get_admin_back_kb(),
@@ -72,7 +75,7 @@ async def show_orders_list(callback: CallbackQuery, session: AsyncSession, state
 
 <i>Выберите заказ для просмотра:</i>"""
 
-    await callback.message.edit_text(
+    await callback.message.answer(
         text=text,
         parse_mode="HTML",
         reply_markup=get_admin_orders_kb(orders),
@@ -141,11 +144,21 @@ async def show_order_card(callback: CallbackQuery, session: AsyncSession) -> Non
 ➖➖➖➖➖➖➖➖➖➖
 <i>Выберите действие:</i>"""
 
-    await callback.message.edit_text(
-        text=text,
-        parse_mode="HTML",
-        reply_markup=get_admin_order_kb(order_id),
-    )
+    # Пробуем отредактировать текст (если текущее сообщение текстовое)
+    try:
+        await callback.message.edit_text(
+            text=text,
+            parse_mode="HTML",
+            reply_markup=get_admin_order_kb(order_id),
+        )
+    except Exception:
+        # Если не получилось (например, было фото), удаляем и отправляем новое
+        await callback.message.delete()
+        await callback.message.answer(
+            text=text,
+            parse_mode="HTML",
+            reply_markup=get_admin_order_kb(order_id),
+        )
 
 
 # =============================================================================
@@ -168,11 +181,12 @@ async def send_order_files(callback: CallbackQuery, session: AsyncSession, bot: 
 
     file_ids_list = order.file_ids_list
 
-    if not file_ids_list:
+    if not file_ids_list and not order.voice_file_id:
         await callback.answer("К заказу не прикреплено файлов", show_alert=True)
         return
 
-    await callback.answer(f"Отправляю {len(file_ids_list)} файл(ов)...")
+    files_count = len(file_ids_list) + (1 if order.voice_file_id else 0)
+    await callback.answer(f"Отправляю {files_count} файл(ов)...")
 
     # Отправляем файлы
     for file_entry in file_ids_list:
@@ -234,11 +248,20 @@ async def start_set_price(callback: CallbackQuery, state: FSMContext) -> None:
 Введите цену в рублях (только число):
 <i>Например: 5000</i>"""
 
-    await callback.message.edit_text(
-        text=text,
-        parse_mode="HTML",
-        reply_markup=get_admin_cancel_kb(),
-    )
+    # Пробуем отредактировать, если не выйдет - удаляем и отправляем
+    try:
+        await callback.message.edit_text(
+            text=text,
+            parse_mode="HTML",
+            reply_markup=get_admin_cancel_kb(),
+        )
+    except Exception:
+        await callback.message.delete()
+        await callback.message.answer(
+            text=text,
+            parse_mode="HTML",
+            reply_markup=get_admin_cancel_kb(),
+        )
 
 
 @router.message(AdminStates.waiting_for_price, F.text)
@@ -390,7 +413,7 @@ async def set_completed(callback: CallbackQuery, session: AsyncSession, bot: Bot
 
 
 @router.callback_query(F.data.startswith("admin_reject_"))
-async def reject_order(callback: CallbackQuery, session: AsyncSession, bot: Bot) -> None:
+async def reject_order(callback: CallbackQuery, session: AsyncSession, state: FSMContext, bot: Bot) -> None:
     """Отклонить заказ"""
     order_id = int(callback.data.split("_")[-1])
 
@@ -418,4 +441,4 @@ async def reject_order(callback: CallbackQuery, session: AsyncSession, bot: Bot)
         logger.error(f"Ошибка уведомления: {e}")
 
     # Возвращаемся к списку заказов
-    await show_orders_list(callback, session, FSMContext)
+    await show_orders_list(callback, session, state)

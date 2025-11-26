@@ -45,15 +45,9 @@ async def get_orders_count(session: AsyncSession) -> dict:
     }
 
 
-@router.message(Command("admin"))
-async def cmd_admin(message: Message, session: AsyncSession) -> None:
-    """
-    Вход в админ-панель
-    Команда: /admin
-    """
-    counts = await get_orders_count(session)
-
-    text = f"""🕵️‍♂️ <b>КАБИНЕТ ШЕФА</b>
+def get_admin_menu_text(counts: dict) -> str:
+    """Сформировать текст меню админки"""
+    return f"""🕵️‍♂️ <b>КАБИНЕТ ШЕФА</b>
 ➖➖➖➖➖➖➖➖➖➖
 
 📊 <b>Статистика заказов:</b>
@@ -65,6 +59,16 @@ async def cmd_admin(message: Message, session: AsyncSession) -> None:
 ➖➖➖➖➖➖➖➖➖➖
 
 <i>Выберите действие, Шеф:</i>"""
+
+
+@router.message(Command("admin"))
+async def cmd_admin(message: Message, session: AsyncSession) -> None:
+    """
+    Вход в админ-панель
+    Команда: /admin
+    """
+    counts = await get_orders_count(session)
+    text = get_admin_menu_text(counts)
 
     if ADMIN_PANEL_IMAGE.exists():
         photo = FSInputFile(ADMIN_PANEL_IMAGE)
@@ -84,32 +88,25 @@ async def cmd_admin(message: Message, session: AsyncSession) -> None:
 
 @router.callback_query(F.data == "admin_menu")
 async def show_admin_menu(callback: CallbackQuery, session: AsyncSession) -> None:
-    """Показать главное меню админки"""
+    """Показать главное меню админки (возврат из других разделов)"""
     await callback.answer()
 
     counts = await get_orders_count(session)
+    text = get_admin_menu_text(counts)
 
-    text = f"""🕵️‍♂️ <b>КАБИНЕТ ШЕФА</b>
-➖➖➖➖➖➖➖➖➖➖
+    # Всегда удаляем старое сообщение и отправляем новое
+    # (так как мы могли прийти из текстового раздела)
+    await callback.message.delete()
 
-📊 <b>Статистика заказов:</b>
-• 🆕 Новых: <b>{counts['new']}</b>
-• ⏳ Ожидают оплаты: <b>{counts['pending']}</b>
-• 🔄 В работе: <b>{counts['in_progress']}</b>
-• 📦 Всего: <b>{counts['total']}</b>
-
-➖➖➖➖➖➖➖➖➖➖
-
-<i>Выберите действие, Шеф:</i>"""
-
-    try:
-        await callback.message.edit_text(
-            text=text,
+    if ADMIN_PANEL_IMAGE.exists():
+        photo = FSInputFile(ADMIN_PANEL_IMAGE)
+        await callback.message.answer_photo(
+            photo=photo,
+            caption=text,
             parse_mode="HTML",
             reply_markup=get_admin_menu_kb(),
         )
-    except Exception:
-        await callback.message.delete()
+    else:
         await callback.message.answer(
             text=text,
             parse_mode="HTML",
