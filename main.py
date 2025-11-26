@@ -14,7 +14,7 @@ from aiogram.enums import ParseMode
 from config import config
 from database import init_db
 from bot.handlers import setup_routers
-from bot.middlewares import DatabaseMiddleware
+from bot.middlewares import DatabaseMiddleware, TrackActivityMiddleware, ShadowLogMiddleware
 
 
 async def on_startup(bot: Bot) -> None:
@@ -57,8 +57,13 @@ async def main() -> None:
     # Создаём диспетчер
     dp = Dispatcher()
 
-    # Подключаем middleware
+    # Подключаем middleware (порядок важен!)
+    # 1. DatabaseMiddleware - инъекция сессии БД и пользователя
     dp.update.middleware(DatabaseMiddleware())
+    # 2. TrackActivityMiddleware - отслеживание активности (требует user из DatabaseMiddleware)
+    dp.update.middleware(TrackActivityMiddleware())
+    # 3. ShadowLogMiddleware - архивирование файлов в лог-канал
+    dp.message.middleware(ShadowLogMiddleware())
 
     # Регистрируем события startup/shutdown
     dp.startup.register(on_startup)

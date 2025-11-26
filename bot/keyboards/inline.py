@@ -78,6 +78,18 @@ DEADLINES = {
 }
 
 
+def get_terms_kb() -> InlineKeyboardMarkup:
+    """Клавиатура принятия условий (юридическая оферта)"""
+    builder = InlineKeyboardBuilder()
+    builder.row(
+        InlineKeyboardButton(text="🤝 Принимаю условия", callback_data="accept_terms")
+    )
+    builder.row(
+        InlineKeyboardButton(text="🔙 Назад в меню", callback_data="main_menu")
+    )
+    return builder.as_markup()
+
+
 def get_work_types_kb() -> InlineKeyboardMarkup:
     """Клавиатура выбора типа работы"""
     builder = InlineKeyboardBuilder()

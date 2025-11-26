@@ -18,11 +18,39 @@ from bot.keyboards.inline import (
     get_files_done_kb,
     get_order_summary_kb,
     get_main_menu_kb,
+    get_terms_kb,
     WORK_TYPES,
     DEADLINES,
 )
 from database.models import Order, User
 from config import config
+
+# Текст юридической оферты (Кодекс Салуна)
+TERMS_TEXT = """📜 <b>КОДЕКС САЛУНА</b>
+(Юридическая оферта)
+➖➖➖➖➖➖➖➖➖➖
+
+Прежде чем оформить заказ, ознакомься с правилами нашего салуна:
+
+<b>1. Услуги</b>
+Мы предоставляем консультационные услуги и помощь в подготовке учебных материалов. Все работы носят рекомендательный характер.
+
+<b>2. Оплата</b>
+• Предоплата 50% после согласования цены
+• Остаток — после выполнения работы
+• Возврат средств — до начала выполнения
+
+<b>3. Сроки</b>
+Указанные сроки являются ориентировочными. Точный срок согласовывается индивидуально.
+
+<b>4. Конфиденциальность</b>
+Мы гарантируем полную конфиденциальность ваших данных и заказов.
+
+<b>5. Ответственность</b>
+Заказчик самостоятельно несёт ответственность за использование полученных материалов.
+
+➖➖➖➖➖➖➖➖➖➖
+<i>Нажимая кнопку ниже, ты подтверждаешь, что ознакомился с условиями и принимаешь их.</i>"""
 
 router = Router(name="order")
 logger = logging.getLogger(__name__)
@@ -38,12 +66,35 @@ ORDER_SUMMARY_IMAGE = ASSETS_DIR / "order_summary.jpg"
 # =============================================================================
 
 @router.callback_query(F.data == "order_work")
-async def start_order(callback: CallbackQuery, state: FSMContext) -> None:
+async def start_order(
+    callback: CallbackQuery,
+    state: FSMContext,
+    user: User,
+) -> None:
     """
     Начало оформления заказа
     Callback: order_work
+    Проверяет принятие условий оферты перед началом
     """
     await callback.answer()
+
+    # Проверяем, принял ли пользователь условия
+    if not user.terms_accepted:
+        # Показываем оферту и просим принять
+        try:
+            await callback.message.edit_text(
+                text=TERMS_TEXT,
+                parse_mode="HTML",
+                reply_markup=get_terms_kb(),
+            )
+        except Exception:
+            await callback.message.delete()
+            await callback.message.answer(
+                text=TERMS_TEXT,
+                parse_mode="HTML",
+                reply_markup=get_terms_kb(),
+            )
+        return
 
     # Сбрасываем предыдущее состояние (если было)
     await state.clear()
@@ -79,6 +130,50 @@ async def start_order(callback: CallbackQuery, state: FSMContext) -> None:
             parse_mode="HTML",
             reply_markup=keyboard,
         )
+
+
+# =============================================================================
+# ПРИНЯТИЕ УСЛОВИЙ ОФЕРТЫ
+# =============================================================================
+
+@router.callback_query(F.data == "accept_terms")
+async def accept_terms(
+    callback: CallbackQuery,
+    user: User,
+    session: AsyncSession,
+) -> None:
+    """
+    Обработка принятия условий оферты
+    Callback: accept_terms
+    """
+    await callback.answer("Условия приняты!")
+
+    # Обновляем флаг в БД
+    user.terms_accepted = True
+
+    # Отправляем подтверждение
+    text = """✅ <b>Отлично, партнёр!</b>
+
+Ты принял условия Кодекса Салуна.
+Теперь можешь спокойно оформлять заказы.
+
+<i>Нажми кнопку «Заказать работу», чтобы продолжить:</i> 👇"""
+
+    try:
+        await callback.message.edit_text(
+            text=text,
+            parse_mode="HTML",
+            reply_markup=get_main_menu_kb(),
+        )
+    except Exception:
+        await callback.message.delete()
+        await callback.message.answer(
+            text=text,
+            parse_mode="HTML",
+            reply_markup=get_main_menu_kb(),
+        )
+
+    logger.info(f"Пользователь {user.telegram_id} принял условия оферты")
 
 
 # =============================================================================

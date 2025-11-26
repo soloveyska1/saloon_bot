@@ -5,7 +5,7 @@
 
 from pathlib import Path
 
-from aiogram import Router, F
+from aiogram import Router, F, Bot
 from aiogram.types import CallbackQuery, FSInputFile
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -30,7 +30,12 @@ RANK_NAMES = {
 
 
 @router.callback_query(F.data == "profile")
-async def show_profile(callback: CallbackQuery, user: User, session: AsyncSession) -> None:
+async def show_profile(
+    callback: CallbackQuery,
+    user: User,
+    session: AsyncSession,
+    bot: Bot,
+) -> None:
     """
     Показать личное дело ковбоя
     """
@@ -44,6 +49,10 @@ async def show_profile(callback: CallbackQuery, user: User, session: AsyncSessio
 
     # Формируем имя для отображения
     display_name = user.username or user.first_name
+
+    # Получаем username бота для реферальной ссылки
+    bot_info = await bot.get_me()
+    referral_link = f"https://t.me/{bot_info.username}?start={user.telegram_id}"
 
     # Получаем последние 5 заказов пользователя
     stmt = (
@@ -71,7 +80,12 @@ async def show_profile(callback: CallbackQuery, user: User, session: AsyncSessio
 🆔 ID: <code>{user.telegram_id}</code>
 📅 В банде с: <b>{date_joined}</b>
 ⭐️ Ранг: <b>{rank_display}</b>
-💰 Бонусы: <b>{user.bonus_balance}</b> монет
+💰 Баланс: <b>{user.balance}</b> руб.
+🎁 Бонусы: <b>{user.bonus_balance}</b> монет
+➖➖➖➖➖➖➖➖➖➖
+🔗 <b>Твоя реферальная ссылка:</b>
+<code>{referral_link}</code>
+<i>Приглашай друзей и получай бонусы!</i>
 ➖➖➖➖➖➖➖➖➖➖
 {orders_text}
 <i>Выполняй заказы — повышай ранг и получай бонусы!</i>"""
