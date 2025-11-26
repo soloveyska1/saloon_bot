@@ -3,9 +3,10 @@
 """
 
 import logging
+import os
 
 from aiogram import Router, F, Bot
-from aiogram.types import CallbackQuery, Message
+from aiogram.types import CallbackQuery, Message, FSInputFile
 from aiogram.fsm.context import FSMContext
 from sqlalchemy import select, or_
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -20,6 +21,7 @@ from bot.keyboards.inline import (
     get_payment_kb,
 )
 from database.models import Order, User
+from config import config
 
 router = Router(name="admin_orders")
 logger = logging.getLogger(__name__)
@@ -37,13 +39,14 @@ async def show_orders_list(callback: CallbackQuery, session: AsyncSession, state
     # Сбрасываем состояние, если было
     await state.clear()
 
-    # Получаем заказы со статусами new, pending_payment, in_progress
+    # Получаем заказы со статусами new, pending_payment, in_progress, paid
     stmt = (
         select(Order)
         .where(or_(
             Order.status == "new",
             Order.status == "pending_payment",
             Order.status == "in_progress",
+            Order.status == "paid",
         ))
         .order_by(Order.created_at.desc())
     )
@@ -111,6 +114,7 @@ async def show_order_card(callback: CallbackQuery, session: AsyncSession) -> Non
     status_names = {
         "new": "🆕 Новый",
         "pending_payment": "⏳ Ожидает оплаты",
+        "paid": "💰 Оплачен",
         "in_progress": "🔄 В работе",
         "review": "👀 На проверке",
         "completed": "✅ Выполнен",
@@ -123,10 +127,13 @@ async def show_order_card(callback: CallbackQuery, session: AsyncSession) -> Non
     # Цена
     price_str = f"{order.price} руб." if order.price else "Не назначена"
 
+    # Ссылка на пользователя
+    user_link = f"<a href='tg://user?id={order.user.telegram_id}'>{order.user.first_name}</a>"
+
     text = f"""📋 <b>ЗАКАЗ №{order.id}</b>
 ➖➖➖➖➖➖➖➖➖➖
 
-👤 <b>Клиент:</b> {order.user.first_name}
+👤 <b>Клиент:</b> {user_link}
 🔗 <b>Username:</b> @{order.user.username or '—'}
 🆔 <b>Telegram:</b> <code>{order.user.telegram_id}</code>
 
@@ -316,27 +323,37 @@ async def process_price(
         parse_mode="HTML",
     )
 
-    # Отправляем уведомление пользователю
+    # Формируем текст для пользователя
     user_text = f"""⚡️ <b>Шеф оценил твой заказ №{order_id}!</b>
 
-💰 <b>Цена:</b> {price} руб.
+💸 К оплате: <b>{price}₽</b>
 
 📋 <b>Тема:</b> {order.subject[:100]}
 
 ➖➖➖➖➖➖➖➖➖➖
 
-Для начала работы внеси предоплату 50%.
-Остаток — после получения готовой работы.
+Жми кнопку, пока скидка не сгорела! 🔥"""
 
-<i>Жми кнопку для оплаты:</i> 👇"""
-
+    # Пробуем отправить с фото
+    photo_path = "assets/price_alert.jpg"
     try:
-        await bot.send_message(
-            chat_id=order.user.telegram_id,
-            text=user_text,
-            parse_mode="HTML",
-            reply_markup=get_payment_kb(order_id),
-        )
+        if os.path.exists(photo_path):
+            photo = FSInputFile(photo_path)
+            await bot.send_photo(
+                chat_id=order.user.telegram_id,
+                photo=photo,
+                caption=user_text,
+                parse_mode="HTML",
+                reply_markup=get_payment_kb(order_id),
+            )
+        else:
+            # Если фото нет - отправляем просто текст
+            await bot.send_message(
+                chat_id=order.user.telegram_id,
+                text=user_text,
+                parse_mode="HTML",
+                reply_markup=get_payment_kb(order_id),
+            )
         logger.info(f"Уведомление о цене отправлено пользователю {order.user.telegram_id}")
     except Exception as e:
         logger.error(f"Не удалось отправить уведомление пользователю: {e}")

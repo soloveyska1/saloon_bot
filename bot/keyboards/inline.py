@@ -171,7 +171,7 @@ def get_payment_kb(order_id: int) -> InlineKeyboardMarkup:
     """Клавиатура для оплаты заказа"""
     builder = InlineKeyboardBuilder()
     builder.row(
-        InlineKeyboardButton(text="💳 Оплатить", callback_data=f"pay_order_{order_id}")
+        InlineKeyboardButton(text="💳 Оплатить сейчас", callback_data=f"pay_order_{order_id}")
     )
     builder.row(
         InlineKeyboardButton(text="❓ Вопрос по цене", callback_data="support")
@@ -200,13 +200,21 @@ def get_admin_orders_kb(orders: list) -> InlineKeyboardMarkup:
     """Клавиатура со списком заказов для админа"""
     builder = InlineKeyboardBuilder()
 
+    # Эмодзи для статусов
+    status_emoji = {
+        "new": "🆕",
+        "pending_payment": "⏳",
+        "paid": "💰",
+        "in_progress": "🔄",
+    }
+
     for order in orders:
         # Обрезаем тему до 20 символов
         subject_short = order.subject[:20] + "..." if len(order.subject) > 20 else order.subject
-        status_emoji = "🆕" if order.status == "new" else "⏳"
+        emoji = status_emoji.get(order.status, "📋")
         builder.row(
             InlineKeyboardButton(
-                text=f"{status_emoji} №{order.id} | {subject_short}",
+                text=f"{emoji} №{order.id} | {subject_short}",
                 callback_data=f"admin_order_{order.id}"
             )
         )
@@ -221,7 +229,7 @@ def get_admin_order_kb(order_id: int) -> InlineKeyboardMarkup:
     """Клавиатура действий с заказом для админа"""
     builder = InlineKeyboardBuilder()
     builder.row(
-        InlineKeyboardButton(text="📎 Получить файлы", callback_data=f"admin_files_{order_id}")
+        InlineKeyboardButton(text="📎 Скачать файлы", callback_data=f"admin_files_{order_id}")
     )
     builder.row(
         InlineKeyboardButton(text="💰 Назвать цену", callback_data=f"admin_set_price_{order_id}")
