@@ -3,6 +3,7 @@
 FSM для оформления заказа
 """
 
+import json
 import logging
 from pathlib import Path
 
@@ -477,9 +478,10 @@ async def confirm_order(
     # Получаем данные из FSM
     data = await state.get_data()
 
-    # Формируем строку file_ids
+    # Формируем строку file_ids и JSON для files_data
     file_ids_list = data.get("file_ids", [])
     file_ids_str = ",".join(file_ids_list) if file_ids_list else None
+    files_data_json = json.dumps(file_ids_list) if file_ids_list else None
 
     # Создаём заказ в БД
     # Примечание: deadline (DateTime) устанавливается позже админом
@@ -492,6 +494,7 @@ async def confirm_order(
         deadline=None,  # DateTime - будет установлен админом
         deadline_name=data.get("deadline_name", "Неизвестный срок"),
         file_ids=file_ids_str,
+        files_data=files_data_json,
         voice_file_id=data.get("voice_file_id"),
         status="new",
     )
