@@ -2,6 +2,6 @@
 Filters package - кастомные фильтры
 """
 
-# TODO: Добавить фильтры для:
-# - Проверки админа
-# - Проверки бана
+from bot.filters.admin import IsAdmin
+
+__all__ = ["IsAdmin"]

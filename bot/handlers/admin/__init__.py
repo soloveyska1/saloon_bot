@@ -4,6 +4,17 @@ Admin handlers - хендлеры для администраторов
 
 from aiogram import Router
 
+from bot.filters.admin import IsAdmin
+from bot.handlers.admin.menu import router as menu_router
+from bot.handlers.admin.orders import router as orders_router
+
+# Главный роутер админки с фильтром IsAdmin
 router = Router(name="admin")
 
-# TODO: Добавить админские хендлеры
+# Применяем фильтр IsAdmin ко всему роутеру
+router.message.filter(IsAdmin())
+router.callback_query.filter(IsAdmin())
+
+# Подключаем админские хендлеры
+router.include_router(menu_router)
+router.include_router(orders_router)

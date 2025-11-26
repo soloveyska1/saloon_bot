@@ -507,3 +507,19 @@ async def cancel_order(callback: CallbackQuery, state: FSMContext) -> None:
             parse_mode="HTML",
             reply_markup=get_main_menu_kb(),
         )
+
+
+# =============================================================================
+# ОПЛАТА (заглушка)
+# =============================================================================
+
+@router.callback_query(F.data.startswith("pay_order_"))
+async def process_payment(callback: CallbackQuery) -> None:
+    """Заглушка оплаты для пользователя"""
+    order_id = callback.data.split("_")[-1]
+    await callback.answer(
+        f"💳 Переход к оплате заказа №{order_id}...\n\n"
+        f"Функция оплаты будет добавлена в следующем обновлении.\n"
+        f"Свяжитесь с нами для оплаты.",
+        show_alert=True,
+    )
