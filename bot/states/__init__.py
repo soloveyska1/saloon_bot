@@ -2,6 +2,6 @@
 States package - состояния FSM (Finite State Machine)
 """
 
-# TODO: Добавить состояния для:
-# - Воронки заказа
-# - Редактирования профиля
+from bot.states.order import OrderForm
+
+__all__ = ["OrderForm"]
